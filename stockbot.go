@@ -10,11 +10,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
-
-type stock struct {
-	Symbol string
-}
 
 func main() {
 	csvf, err := os.Open("./screener.csv")
@@ -23,26 +20,56 @@ func main() {
 	}
 	defer csvf.Close()
 
-	reader := csv.NewReader(csvf)
-	ch := processCSV(reader)
+	manager := newStockManger(csvf, 10)
+	err = manager.start()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
-	stockch := make(chan []stockData)
+type stockManager struct {
+	Reader     *csv.Reader
+	WaitGroup  *sync.WaitGroup
+	MaxWorkers int
+}
+
+func newStockManger(f *os.File, maxWorkers int) stockManager {
+	reader := csv.NewReader(f)
 	var wg sync.WaitGroup
+	return stockManager{reader, &wg, maxWorkers}
+}
+
+func (s *stockManager) start() error {
+	ch := processCSV(s.Reader)
+
+	stockch := make(chan []stock)
+	guard := make(chan struct{}, s.MaxWorkers)
 
 	for data := range ch {
+		guard <- struct{}{} // would block if guard channel is already filled
 		ticker := data[0]
-		wg.Add(1)
-		go requestStockHistory(ticker, stockch, &wg)
+		s.WaitGroup.Add(1)
+		go requestStockHistory(ticker, stockch, s.WaitGroup, guard)
+		time.Sleep(time.Millisecond * 100)
 	}
 
 	go func() {
-		wg.Wait()
+		s.WaitGroup.Wait()
 		close(stockch)
 	}()
 
+	err := s.writeToFile(stockch)
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *stockManager) writeToFile(ch chan []stock) error {
 	newf, err := os.Create("stockdata.json")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer newf.Close()
 
@@ -50,7 +77,7 @@ func main() {
 	defer fmt.Fprint(newf, "]")
 
 	cnt := 0
-	for stock := range stockch {
+	for stock := range ch {
 		if stock == nil {
 			continue
 		}
@@ -59,12 +86,14 @@ func main() {
 		}
 		jsonstock, err := json.Marshal(stock)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		fmt.Fprint(newf, string(jsonstock))
 		cnt++
 	}
 
+	fmt.Printf("%d stocks", cnt)
+	return nil
 }
 
 func processCSV(cr *csv.Reader) (ch chan []string) {
@@ -90,7 +119,7 @@ func processCSV(cr *csv.Reader) (ch chan []string) {
 	return
 }
 
-type stockData struct {
+type stock struct {
 	Ticker string  `json:"ticker"`
 	Date   string  `json:"date"`
 	Open   float64 `json:"open"`
@@ -100,7 +129,7 @@ type stockData struct {
 	Volume int     `json:"volume"`
 }
 
-func requestStockHistory(ticker string, c chan []stockData, wg *sync.WaitGroup) {
+func requestStockHistory(ticker string, c chan []stock, wg *sync.WaitGroup, guard chan struct{}) {
 	defer wg.Done()
 	base := fmt.Sprintf("https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=%v&datatype=csv&outputsize=full&apikey=apikey", ticker)
 
@@ -114,7 +143,7 @@ func requestStockHistory(ticker string, c chan []stockData, wg *sync.WaitGroup) 
 	reader.LazyQuotes = true
 	ch := processCSV(reader)
 
-	var dataSlice []stockData
+	var dataSlice []stock
 	for data := range ch {
 		if len(data) < 6 {
 			break
@@ -149,8 +178,9 @@ func requestStockHistory(ticker string, c chan []stockData, wg *sync.WaitGroup) 
 			log.Println(err)
 			break
 		}
-		stock := stockData{ticker, date, open, high, low, close, volume}
+		stock := stock{ticker, date, open, high, low, close, volume}
 		dataSlice = append(dataSlice, stock)
 	}
+	<-guard
 	c <- dataSlice
 }
