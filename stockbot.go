@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/jmirfield/stockbot/internal/util"
 )
@@ -48,7 +49,7 @@ func (s *stockManager) start() error {
 		ticker := data[0]
 		worker := s.newStockWorker()
 		go worker.start(ticker)
-		// time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 20)
 	}
 
 	go func() {
