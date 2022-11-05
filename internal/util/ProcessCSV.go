@@ -6,7 +6,7 @@ import (
 	"log"
 )
 
-func processCSV(cr *csv.Reader) (ch chan []string) {
+func ProcessCSV(cr *csv.Reader) (ch chan []string) {
 	ch = make(chan []string, 10)
 	go func() {
 		//Read the header line
