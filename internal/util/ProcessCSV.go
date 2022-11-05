@@ -6,6 +6,8 @@ import (
 	"log"
 )
 
+// ProcessCSV takes in a *csv.Reader and reads data row by row sending that
+// data back to the chan that is returned from the function
 func ProcessCSV(cr *csv.Reader) (ch chan []string) {
 	ch = make(chan []string, 10)
 	go func() {
