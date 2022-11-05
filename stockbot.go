@@ -4,13 +4,13 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"sync"
-	"time"
+
+	"github.com/jmirfield/stockbot/internal/util"
 )
 
 func main() {
@@ -28,45 +28,43 @@ func main() {
 }
 
 type stockManager struct {
-	Reader     *csv.Reader
-	WaitGroup  *sync.WaitGroup
-	MaxWorkers int
+	Reader *csv.Reader
+	stockWorker
 }
 
 func newStockManger(f *os.File, maxWorkers int) stockManager {
-	reader := csv.NewReader(f)
 	var wg sync.WaitGroup
-	return stockManager{reader, &wg, maxWorkers}
+	reader := csv.NewReader(f)
+	stockch := make(chan []stock)
+	guard := make(chan struct{}, maxWorkers)
+	return stockManager{reader, stockWorker{&wg, stockch, guard}}
 }
 
 func (s *stockManager) start() error {
-	ch := processCSV(s.Reader)
-
-	stockch := make(chan []stock)
-	guard := make(chan struct{}, s.MaxWorkers)
+	ch := util.ProcessCSV(s.Reader)
 
 	for data := range ch {
-		guard <- struct{}{} // would block if guard channel is already filled
+		s.Guard <- struct{}{} // would block if guard channel is already filled
 		ticker := data[0]
-		s.WaitGroup.Add(1)
-		go requestStockHistory(ticker, stockch, s.WaitGroup, guard)
-		time.Sleep(time.Millisecond * 100)
+		worker := s.newStockWorker()
+		go worker.start(ticker)
+		// time.Sleep(time.Second * 20)
 	}
 
 	go func() {
 		s.WaitGroup.Wait()
-		close(stockch)
+		close(s.StockChannel)
 	}()
 
-	err := s.writeToFile(stockch)
-
+	err := s.writeToFile()
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
-func (s *stockManager) writeToFile(ch chan []stock) error {
+func (s *stockManager) writeToFile() error {
 	newf, err := os.Create("stockdata.json")
 	if err != nil {
 		return err
@@ -77,7 +75,7 @@ func (s *stockManager) writeToFile(ch chan []stock) error {
 	defer fmt.Fprint(newf, "]")
 
 	cnt := 0
-	for stock := range ch {
+	for stock := range s.StockChannel {
 		if stock == nil {
 			continue
 		}
@@ -96,27 +94,22 @@ func (s *stockManager) writeToFile(ch chan []stock) error {
 	return nil
 }
 
-func processCSV(cr *csv.Reader) (ch chan []string) {
-	ch = make(chan []string, 10)
-	go func() {
-		//Read the header line
-		if _, err := cr.Read(); err != nil {
-			log.Fatal(err)
-		}
-		defer close(ch)
+func (s *stockManager) newStockWorker() stockWorker {
+	s.WaitGroup.Add(1)
+	return stockWorker{s.WaitGroup, s.StockChannel, s.Guard}
+}
 
-		for {
-			rec, err := cr.Read()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				log.Fatal(err)
-			}
-			ch <- rec
-		}
-	}()
-	return
+type stockWorker struct {
+	WaitGroup    *sync.WaitGroup
+	StockChannel chan []stock
+	Guard        chan struct{}
+}
+
+func (sw *stockWorker) start(ticker string) {
+	defer sw.WaitGroup.Done()
+	stocks := requestStockHistory(ticker)
+	<-sw.Guard
+	sw.StockChannel <- stocks
 }
 
 type stock struct {
@@ -129,8 +122,7 @@ type stock struct {
 	Volume int     `json:"volume"`
 }
 
-func requestStockHistory(ticker string, c chan []stock, wg *sync.WaitGroup, guard chan struct{}) {
-	defer wg.Done()
+func requestStockHistory(ticker string) []stock {
 	base := fmt.Sprintf("https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=%v&datatype=csv&outputsize=full&apikey=apikey", ticker)
 
 	resp, err := http.Get(base)
@@ -141,7 +133,7 @@ func requestStockHistory(ticker string, c chan []stock, wg *sync.WaitGroup, guar
 
 	reader := csv.NewReader(resp.Body)
 	reader.LazyQuotes = true
-	ch := processCSV(reader)
+	ch := util.ProcessCSV(reader)
 
 	var dataSlice []stock
 	for data := range ch {
@@ -181,6 +173,5 @@ func requestStockHistory(ticker string, c chan []stock, wg *sync.WaitGroup, guar
 		stock := stock{ticker, date, open, high, low, close, volume}
 		dataSlice = append(dataSlice, stock)
 	}
-	<-guard
-	c <- dataSlice
+	return dataSlice
 }
