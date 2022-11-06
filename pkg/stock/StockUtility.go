@@ -2,15 +2,18 @@ package stock
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/jmirfield/stockbot/internal/util"
 )
 
-type stock struct {
+// Stock is structured stock data
+type Stock struct {
 	Ticker string  `json:"ticker"`
 	Date   string  `json:"date"`
 	Open   float64 `json:"open"`
@@ -20,7 +23,7 @@ type stock struct {
 	Volume int     `json:"volume"`
 }
 
-func requestStockHistory(ticker string) []stock {
+func requestStockHistory(ticker string) []Stock {
 	base := fmt.Sprintf("https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=%v&datatype=csv&outputsize=full&apikey=apikey", ticker)
 
 	resp, err := http.Get(base)
@@ -33,7 +36,7 @@ func requestStockHistory(ticker string) []stock {
 	reader.LazyQuotes = true
 	ch := util.ProcessCSV(reader)
 
-	var dataSlice []stock
+	var dataSlice []Stock
 	for data := range ch {
 		if len(data) < 6 {
 			break
@@ -68,8 +71,40 @@ func requestStockHistory(ticker string) []stock {
 			log.Println(err)
 			break
 		}
-		stock := stock{ticker, date, open, high, low, close, volume}
+		stock := Stock{ticker, date, open, high, low, close, volume}
 		dataSlice = append(dataSlice, stock)
 	}
 	return dataSlice
+}
+
+// WriteToJSON wil read from stock chan and start
+// writing the data to a json file
+func WriteToJSON(s chan []Stock) error {
+	newf, err := os.Create("stockdata.json")
+	if err != nil {
+		return err
+	}
+	defer newf.Close()
+
+	fmt.Fprint(newf, "[")
+	defer fmt.Fprint(newf, "]")
+
+	cnt := 0
+	for stock := range s {
+		if stock == nil {
+			continue
+		}
+		if cnt > 0 {
+			fmt.Fprint(newf, ",")
+		}
+		jsonstock, err := json.Marshal(stock)
+		if err != nil {
+			return err
+		}
+		fmt.Fprint(newf, string(jsonstock))
+		cnt++
+	}
+
+	fmt.Printf("%d stocks found\n", cnt)
+	return nil
 }

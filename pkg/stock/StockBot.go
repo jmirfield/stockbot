@@ -2,8 +2,6 @@ package stock
 
 import (
 	"encoding/csv"
-	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -27,76 +25,41 @@ type Manager struct {
 func NewManager(f *os.File, maxWorkers int) Manager {
 	var wg sync.WaitGroup
 	reader := csv.NewReader(f)
-	stockch := make(chan []stock)
 	guard := make(chan struct{}, maxWorkers)
-	return Manager{reader, worker{&wg, stockch, guard}}
+	return Manager{reader, worker{&wg, nil, guard}}
 }
 
-// Start begins the process of reading through the csv file
-// and creating a new worker that gets sent off as a go routine
+// Start begins the process of reading through the csv file,
+// creating a new worker that gets sent off as a go routine,
 // and retrieves the given ticker stock data
-func (s *Manager) Start() error {
+func (s *Manager) Start() chan []Stock {
 	ch := util.ProcessCSV(s.Reader)
+	stockch := make(chan []Stock)
 
 	for data := range ch {
 		s.Guard <- struct{}{} // would block if guard channel is already filled
 		ticker := data[0]
-		worker := s.newWorker()
+		worker := s.newWorker(stockch)
 		go worker.start(ticker)
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 12)
 	}
 
 	go func() {
 		s.WaitGroup.Wait()
-		close(s.StockChannel)
+		close(stockch)
 	}()
 
-	err := s.writeToFile()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return stockch
 }
 
-func (s *Manager) writeToFile() error {
-	newf, err := os.Create("stockdata.json")
-	if err != nil {
-		return err
-	}
-	defer newf.Close()
-
-	fmt.Fprint(newf, "[")
-	defer fmt.Fprint(newf, "]")
-
-	cnt := 0
-	for stock := range s.StockChannel {
-		if stock == nil {
-			continue
-		}
-		if cnt > 0 {
-			fmt.Fprint(newf, ",")
-		}
-		jsonstock, err := json.Marshal(stock)
-		if err != nil {
-			return err
-		}
-		fmt.Fprint(newf, string(jsonstock))
-		cnt++
-	}
-
-	fmt.Printf("%d stocks", cnt)
-	return nil
-}
-
-func (s *Manager) newWorker() worker {
+func (s *Manager) newWorker(ch chan []Stock) worker {
 	s.WaitGroup.Add(1)
-	return worker{s.WaitGroup, s.StockChannel, s.Guard}
+	return worker{s.WaitGroup, ch, s.Guard}
 }
 
 type worker struct {
 	WaitGroup    *sync.WaitGroup
-	StockChannel chan []stock
+	StockChannel chan []Stock
 	Guard        chan struct{}
 }
 

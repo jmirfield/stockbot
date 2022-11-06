@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"os"
+
+	"github.com/jmirfield/stockbot/pkg/stock"
 )
 
 func main() {
@@ -12,9 +14,7 @@ func main() {
 	}
 	defer csvf.Close()
 
-	manager := newStockManger(csvf, 10)
-	err = manager.start()
-	if err != nil {
-		log.Fatal(err)
-	}
+	manager := stock.NewManager(csvf, 10)
+	stockchannel := manager.Start()
+	stock.WriteToJSON(stockchannel)
 }
