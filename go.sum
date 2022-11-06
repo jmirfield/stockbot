@@ -1,4 +1,4 @@
-github.com/jmirfield/stockbot/internal/util v0.0.0-20221106143614-d1e8d827aa1d h1:rlhZ2+UsE1YpvlmeTaFLVxaI2q9oO4/+4tzWGn3StnE=
-github.com/jmirfield/stockbot/internal/util v0.0.0-20221106143614-d1e8d827aa1d/go.mod h1:dq31MiKsBU9oEKKikJSgSklpZ5XqzcPUBj4NoNx98jY=
-github.com/jmirfield/stockbot/pkg/stock v0.0.0-20221106164532-c92023be31ad h1:SjekTXmPtGf5AP+dAQDcxMPdQt5P+BgQgpDuztVplp4=
-github.com/jmirfield/stockbot/pkg/stock v0.0.0-20221106164532-c92023be31ad/go.mod h1:vVtly2u5loOm4youlOeuDI8De6hOvhGIJO22T6yh2do=
+github.com/jmirfield/stockbot/internal/util v0.0.0-20221106173210-56ada43e350f h1:B3pbapyKfo/1Q3WpB+mhN4Nr+/aryvsVcLfirWnkNyg=
+github.com/jmirfield/stockbot/internal/util v0.0.0-20221106173210-56ada43e350f/go.mod h1:dq31MiKsBU9oEKKikJSgSklpZ5XqzcPUBj4NoNx98jY=
+github.com/jmirfield/stockbot/pkg/stock v0.0.0-20221106173210-56ada43e350f h1:RMP6iHjjBgYF25g9KFqDHXu0439l0OxDwWb7IsygL+s=
+github.com/jmirfield/stockbot/pkg/stock v0.0.0-20221106173210-56ada43e350f/go.mod h1:vVtly2u5loOm4youlOeuDI8De6hOvhGIJO22T6yh2do=
