@@ -36,12 +36,17 @@ func (s *Manager) Start() chan []Stock {
 	ch := util.ProcessCSV(s.Reader)
 	stockch := make(chan []Stock)
 
+	cnt := 0
 	for data := range ch {
+		if cnt > 0 {
+			break
+		}
 		s.Guard <- struct{}{} // would block if guard channel is already filled
 		ticker := data[0]
 		worker := s.newWorker(stockch)
 		go worker.start(ticker)
 		time.Sleep(time.Second * 12)
+		cnt++
 	}
 
 	go func() {
